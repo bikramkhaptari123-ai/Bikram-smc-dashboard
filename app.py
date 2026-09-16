@@ -61,7 +61,7 @@ else:
 
 timeframe = st.sidebar.selectbox("Timeframe", ["1h", "1d", "1wk"], index=1)
 
-# SMC & ICT Calculations (Order Blocks, FVG & Market Structure)
+# SMC & ICT Calculations
 def calculate_smc_ict(df):
     delta = df['close'].diff()
     gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
@@ -71,13 +71,6 @@ def calculate_smc_ict(df):
     
     df['ema20'] = df['close'].ewm(span=20, adjust=False).mean()
     df['ema50'] = df['close'].ewm(span=50, adjust=False).mean()
-    
-    # ICT Fair Value Gaps (FVG) Detection
-    # Bullish FVG: Low of candle i+1 > High of candle i-1
-    df['fvg_bull'] = (df['low'].shift(-1) > df['high'].shift(1)) & (df['close'] > df['open'])
-    # Bearish FVG: High of candle i+1 < Low of candle i-1
-    df['fvg_bear'] = (df['high'].shift(-1) < df['low'].shift(1)) & (df['close'] < df['open'])
-    
     return df
 
 # NEPSE Mock Data Generator
@@ -130,10 +123,10 @@ def fetch_global_data(ticker, tf):
 
 # Load Data
 if is_nepse:
-    st.info(f"Loading SMC & ICT setup for NEPSE: **{symbol}**...")
+    st.info(f"Loading clean SMC setup for NEPSE: **{symbol}**...")
     df = generate_nepse_data(symbol)
 else:
-    st.info(f"Loading SMC & ICT setup for **{symbol}** ({yf_symbol})...")
+    st.info(f"Loading clean SMC setup for **{symbol}** ({yf_symbol})...")
     df = fetch_global_data(yf_symbol, timeframe)
 
 if df is not None and not df.empty:
@@ -161,39 +154,26 @@ if df is not None and not df.empty:
     fig.add_trace(go.Scatter(x=df.index, y=df['ema20'], name="EMA 20", line=dict(color='#2962ff', width=1.2)), row=1, col=1)
     fig.add_trace(go.Scatter(x=df.index, y=df['ema50'], name="EMA 50", line=dict(color='#ff9800', width=1.2)), row=1, col=1)
 
-    # Adding ICT / SMC Zones (Order Blocks & Fair Value Gaps as Rectangular Shapes)
+    # Clean Order Blocks: Only highlight the most recent significant OBs instead of every candle
     shapes = []
-    annotations = []
+    recent_df = df.tail(40) # Look at recent candles to avoid clutter
     
-    # Loop through data to find Order Blocks and draw Rectangles
-    for i in range(2, len(df) - 2):
-        # Bullish Order Block (Last bearish candle before strong up move)
-        if df['close'].iloc[i] > df['open'].iloc[i] and df['close'].iloc[i-1] < df['open'].iloc[i-1]:
-            if df['close'].iloc[i] > df['high'].iloc[i-1]:
-                # Draw Bullish OB Zone Box
-                shapes.append(dict(
-                    type="rect",
-                    x0=df.index[i-1], y0=df['low'].iloc[i-1],
-                    x1=df.index[-1], y1=df['high'].iloc[i-1],
-                    xref="x1", yref="y1",
-                    fillcolor="rgba(38, 166, 154, 0.15)",
-                    line=dict(color="#26a69a", width=1, dash="dot"),
-                    layer="below"
-                ))
+    for i in range(2, len(recent_df) - 1):
+        idx = recent_df.index[i]
+        prev_idx = recent_df.index[i-1]
         
-        # Bearish Order Block (Last bullish candle before strong down move)
-        elif df['close'].iloc[i] < df['open'].iloc[i] and df['close'].iloc[i-1] > df['open'].iloc[i-1]:
-            if df['close'].iloc[i] < df['low'].iloc[i-1]:
-                # Draw Bearish OB Zone Box
-                shapes.append(dict(
-                    type="rect",
-                    x0=df.index[i-1], y0=df['low'].iloc[i-1],
-                    x1=df.index[-1], y1=df['high'].iloc[i-1],
-                    xref="x1", yref="y1",
-                    fillcolor="rgba(239, 83, 80, 0.15)",
-                    line=dict(color="#ef5350", width=1, dash="dot"),
-                    layer="below"
-                ))
+        # Find strong Bullish OB
+        if recent_df['close'].iloc[i] > recent_df['open'].iloc[i] and recent_df['close'].iloc[i-1] < recent_df['open'].iloc[i-1]:
+            shapes.append(dict(
+                type="rect",
+                x0=prev_idx, y0=recent_df['low'].iloc[i-1],
+                x1=recent_df.index[-1], y1=recent_df['high'].iloc[i-1],
+                xref="x1", yref="y1",
+                fillcolor="rgba(38, 166, 154, 0.2)",
+                line=dict(color="#26a69a", width=1),
+                layer="below"
+            ))
+            break # Keep only the latest major valid one to keep chart clean
 
     fig.update_layout(shapes=shapes)
 
@@ -206,7 +186,7 @@ if df is not None and not df.empty:
     fig.add_hline(y=70, line_dash="dash", line_color="#ef5350", row=3, col=1)
     fig.add_hline(y=30, line_dash="dash", line_color="#26a69a", row=3, col=1)
 
-    # Layout styling with Price on the RIGHT side (TradingView style)
+    # Layout styling
     fig.update_layout(
         template="plotly_dark" if is_dark else "plotly_white",
         paper_bgcolor=bg_color,
@@ -219,8 +199,6 @@ if df is not None and not df.empty:
     )
 
     fig.update_xaxes(gridcolor=grid_color, showspikes=True, spikemode="across", spikesnap="cursor", spikecolor="gray")
-    
-    # Price Axis on the RIGHT side
     fig.update_yaxes(side="right", gridcolor=grid_color, showspikes=True, spikecolor="gray")
 
     st.plotly_chart(fig, use_container_width=True)
