@@ -157,10 +157,11 @@ def render_pro_chart(df, symbol, show_smc, show_rsi, theme):
 
     # Styling & Layout
     fig.update_layout(
-        paper_bgcolor=bg_color, plot_bgcolor=bg_color,
-        height=720, margin=dict(l=10, r=80, t=20, b=20),
-        xaxis_rangeslider_visible=False,
-        hovermode="x unified"
+    paper_bgcolor=bg_color, plot_bgcolor=bg_color,
+    height=800, margin=dict(l=10, r=10, t=20, b=20),
+    xaxis_rangeslider_visible=False,
+    hovermode="x unified"
+)
     )
 
     fig.update_yaxes(side="right", showgrid=True, gridcolor=grid_color, tickfont=dict(color=text_color, size=11), secondary_y=False)
@@ -186,7 +187,7 @@ with col1:
 # Data Fetching & Execution
 if asset_class == "Crypto":
         yf_symbol = symbol.replace("/USDT", "-USD").replace("/", "-")
-        data = yf.download(yf_symbol, period="1mo", interval=timeframe)
+        data = yf.download(yf_symbol, period="7d", interval=timeframe)
         if not data.empty:
             df = data.reset_index()
             df.columns = [col[0].lower() if isinstance(col, tuple) else col.lower() for col in df.columns]
