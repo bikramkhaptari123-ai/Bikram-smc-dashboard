@@ -185,12 +185,14 @@ with col1:
 
 # Data Fetching & Execution
 if asset_class == "Crypto":
-    exchange = ccxt.binance()
-    ohlcv = exchange.fetch_ohlcv(symbol, timeframe=timeframe, limit=100)
-    df = pd.DataFrame(ohlcv, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
-    df['timestamp_str'] = pd.to_datetime(df['timestamp'], unit='ms').dt.strftime('%m-%d %H:%M')
-    render_pro_chart(df, symbol, show_smc, show_rsi, theme_choice)
-
+        yf_symbol = symbol.replace("/USDT", "-USD").replace("/", "-")
+        data = yf.download(yf_symbol, period="1mo", interval=timeframe)
+        if not data.empty:
+            df = data.reset_index()
+            df.columns = [col[0].lower() if isinstance(col, tuple) else col.lower() for col in df.columns]
+            time_col = 'datetime' if 'datetime' in df.columns else 'date'
+            df['timestamp_str'] = pd.to_datetime(df[time_col]).dt.strftime('%Y-%m-%d %H:%M')
+            render_pro_chart(df, symbol, show_smc, show_rsi, theme_choice)
 elif asset_class == "NEPSE":
     df = generate_nepse_data(symbol)
     render_pro_chart(df, f"NEPSE:{symbol}", show_smc, show_rsi, theme_choice)
