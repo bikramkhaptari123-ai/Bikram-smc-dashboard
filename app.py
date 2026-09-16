@@ -2,7 +2,6 @@ import streamlit as st
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import pandas as pd
-import ccxt
 import yfinance as yf
 import numpy as np
 
@@ -14,15 +13,18 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-st.title("📊 Pro TradingView SMC Dashboard (With Volume & RSI)")
+st.title("📊 Pro TradingView SMC Dashboard (NEPSE, Crypto, Forex & Commodities)")
 
 # Sidebar Controls
 st.sidebar.header("⚙️ Dashboard Settings")
 theme_choice = st.sidebar.selectbox("Theme Mode", ["TradingView Dark", "TradingView Light"], index=0)
-asset_class = st.sidebar.selectbox("Asset Class", ["Crypto", "NEPSE", "Exness Watchlist"])
+asset_class = st.sidebar.selectbox("Asset Class", ["NEPSE", "Crypto", "Forex", "Commodities (Gold/Silver)"])
 
 # Asset Selection and Ticker mapping
-if asset_class == "Crypto":
+if asset_class == "NEPSE":
+    nepse_symbol = st.sidebar.text_input("Enter NEPSE Symbol (e.g., NABIL, NICA, SHIVM)", "NABIL")
+    yf_symbol = f"{nepse_symbol.strip().upper()}.NE"
+elif asset_class == "Crypto":
     crypto_map = {
         "BTC/USDT": "BTC-USD",
         "ETH/USDT": "ETH-USD",
@@ -37,22 +39,29 @@ if asset_class == "Crypto":
     }
     symbol = st.sidebar.selectbox("Select Crypto Pair", list(crypto_map.keys()))
     yf_symbol = crypto_map[symbol]
-elif asset_class == "NEPSE":
-    nepse_symbol = st.sidebar.text_input("Enter NEPSE Symbol (e.g., NABIL, NICA)", "NABIL")
-    yf_symbol = f"{nepse_symbol}.NE" if not nepse_symbol.endswith(".NE") else nepse_symbol
-else:
-    exness_map = {
-        "Gold (XAU/USD)": "GC=F",
+elif asset_class == "Forex":
+    forex_map = {
         "EUR/USD": "EURUSD=X",
         "GBP/USD": "GBPUSD=X",
-        "USD/JPY": "USDJPY=X"
+        "USD/JPY": "USDJPY=X",
+        "AUD/USD": "AUDUSD=X",
+        "USD/CAD": "USDCAD=X",
+        "NZD/USD": "NZDUSD=X"
     }
-    symbol = st.sidebar.selectbox("Select Exness Asset", list(exness_map.keys()))
-    yf_symbol = exness_map[symbol]
+    symbol = st.sidebar.selectbox("Select Forex Pair", list(forex_map.keys()))
+    yf_symbol = forex_map[symbol]
+else:
+    comm_map = {
+        "Gold (XAU/USD)": "GC=F",
+        "Silver (XAG/USD)": "SI=F",
+        "Crude Oil": "CL=F"
+    }
+    symbol = st.sidebar.selectbox("Select Commodity", list(comm_map.keys()))
+    yf_symbol = comm_map[symbol]
 
-timeframe = st.sidebar.selectbox("Timeframe", ["1h", "4h", "1d", "1wk"], index=1)
+timeframe = st.sidebar.selectbox("Timeframe", ["1h", "1d", "1wk"], index=1)
 
-# Technical Calculations (RSI & Indicators)
+# Technical Calculations (RSI & EMAs)
 def calculate_indicators(df):
     delta = df['close'].diff()
     gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
@@ -65,39 +74,45 @@ def calculate_indicators(df):
     df['ema50'] = df['close'].ewm(span=50, adjust=False).mean()
     return df
 
-# Data Fetching Function
+# Robust Data Fetching Function
 @st.cache_data(ttl=300)
 def fetch_data(ticker, tf):
     try:
-        period_map = {"1h": "60d", "4h": "60d", "1d": "1y", "1wk": "2y"}
-        interval_map = {"1h": "60m", "4h": "1h", "1d": "1d", "1wk": "1wk"} # yfinance limitation for 4h uses hourly or daily
+        period_map = {"1h": "60d", "1d": "1y", "1wk": "2y"}
+        interval_map = {"1h": "60m", "1d": "1d", "1wk": "1wk"}
         
-        per = period_map.get(tf, "60d")
-        iv = "1h" if tf == "4h" else interval_map.get(tf, "1d")
+        per = period_map.get(tf, "1y")
+        iv = interval_map.get(tf, "1d")
         
-        data = yf.download(ticker, period=per, interval=iv, progress=False)
-        if data.empty:
+        # Download data without multi-index issues
+        data = yf.download(ticker, period=per, interval=iv, progress=False, auto_adjust=True)
+        if data is None or data.empty:
             return None
         
-        # Flatten multi-index columns if present
+        # Clean columns if multi-index exists
         if isinstance(data.columns, pd.MultiIndex):
             data.columns = data.columns.get_level_values(0)
             
-        data = data.rename(columns={
-            'Open': 'open', 'High': 'high', 'Low': 'low', 'Close': 'close', 'Volume': 'volume'
-        })
+        # Standardize column names
+        rename_dict = {}
+        for col in data.columns:
+            col_lower = str(col).lower()
+            if 'open' in col_lower: rename_dict[col] = 'open'
+            elif 'high' in col_lower: rename_dict[col] = 'high'
+            elif 'low' in col_lower: rename_dict[col] = 'low'
+            elif 'close' in col_lower: rename_dict[col] = 'close'
+            elif 'volume' in col_lower: rename_dict[col] = 'volume'
+            
+        data = data.rename(columns=rename_dict)
         
-        # Resample to 4h if selected timeframe is 4h and interval was hourly
-        if tf == "4h" and len(data) > 0:
-            data = data.resample('4h').agg({
-                'open': 'first',
-                'high': 'max',
-                'low': 'min',
-                'close': 'last',
-                'volume': 'sum'
-            }).dropna()
+        required_cols = ['open', 'high', 'low', 'close']
+        if not all(col in data.columns for col in required_cols):
+            return None
+            
+        if 'volume' not in data.columns:
+            data['volume'] = 0
 
-        data = data.dropna()
+        data = data.dropna(subset=['close'])
         return calculate_indicators(data)
     except Exception as e:
         return None
@@ -162,4 +177,4 @@ if df is not None and not df.empty:
 
     st.plotly_chart(fig, use_container_width=True)
 else:
-    st.error(f"Data not found for {yf_symbol}. Please check the symbol name or try another timeframe.")
+    st.error(f"Data not found for {yf_symbol}. Please check the symbol name or select another asset.")
