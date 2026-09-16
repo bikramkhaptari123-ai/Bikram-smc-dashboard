@@ -162,7 +162,6 @@ def render_pro_chart(df, symbol, show_smc, show_rsi, theme):
     xaxis_rangeslider_visible=False,
     hovermode="x unified"
 )
-    )
 
     fig.update_yaxes(side="right", showgrid=True, gridcolor=grid_color, tickfont=dict(color=text_color, size=11), secondary_y=False)
     fig.update_xaxes(type="category", showgrid=True, gridcolor=grid_color, tickfont=dict(color=text_color, size=10), nticks=12)
