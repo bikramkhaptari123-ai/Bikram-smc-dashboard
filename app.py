@@ -5,20 +5,20 @@ import pandas as pd
 import yfinance as yf
 import numpy as np
 
-st.set_page_config(page_title="Pro SMC & ICT TradingView Dashboard", layout="wide")
+st.set_page_config(page_title="Pro TradingView & SMC Dashboard", layout="wide")
 
 st.markdown("""
     <style>
-    .block-container { padding-top: 1rem; padding-bottom: 1rem; }
+    .block-container { padding-top: 0.8rem; padding-bottom: 0.8rem; }
     </style>
 """, unsafe_allow_html=True)
 
-st.title("📊 Pro SMC & ICT TradingView Dashboard")
+st.title("📊 Pro TradingView & SMC Financial Dashboard")
 
-# Sidebar Controls
-st.sidebar.header("⚙️ Dashboard Settings")
+# Sidebar Controls (TradingView Style Panel)
+st.sidebar.header("⚙️ Chart Settings")
 theme_choice = st.sidebar.selectbox("Theme Mode", ["TradingView Dark", "TradingView Light"], index=0)
-asset_class = st.sidebar.selectbox("Asset Class", ["NEPSE", "Crypto", "Forex", "Commodities (Gold/Silver)"])
+asset_class = st.sidebar.selectbox("Asset Class", ["Crypto", "Forex", "Commodities (Gold/Silver)", "NEPSE"])
 
 symbol = ""
 yf_symbol = ""
@@ -26,44 +26,26 @@ is_nepse = False
 
 if asset_class == "NEPSE":
     is_nepse = True
-    nepse_symbols = [
-        "NABIL", "NMB", "NICA", "KBL", "GBIME", "EBL", "PCBL", 
-        "AKPL", "UPPER", "BHPL", "NRIC", "HRL", "NLIC", "CIT", "NTC"
-    ]
+    nepse_symbols = ["NABIL", "NMB", "NICA", "KBL", "GBIME", "EBL", "AKPL", "UPPER", "BHPL", "NRIC", "HRL"]
     symbol = st.sidebar.selectbox("Select NEPSE Stock", nepse_symbols)
     timeframe = st.sidebar.selectbox("Timeframe", ["1D", "1W", "1M", "6M"], index=0)
 else:
     if asset_class == "Crypto":
-        crypto_map = {
-            "BTC/USDT": "BTC-USD",
-            "ETH/USDT": "ETH-USD",
-            "SOL/USDT": "SOL-USD",
-            "BNB/USDT": "BNB-USD",
-            "XRP/USDT": "XRP-USD"
-        }
+        crypto_map = {"BTC/USDT": "BTC-USD", "ETH/USDT": "ETH-USD", "SOL/USDT": "SOL-USD", "BNB/USDT": "BNB-USD", "XRP/USDT": "XRP-USD"}
         symbol = st.sidebar.selectbox("Select Crypto Pair", list(crypto_map.keys()))
         yf_symbol = crypto_map[symbol]
     elif asset_class == "Forex":
-        forex_map = {
-            "EUR/USD": "EURUSD=X",
-            "GBP/USD": "GBPUSD=X",
-            "USD/JPY": "USDJPY=X",
-            "AUD/USD": "AUDUSD=X"
-        }
+        forex_map = {"EUR/USD": "EURUSD=X", "GBP/USD": "GBPUSD=X", "USD/JPY": "USDJPY=X", "AUD/USD": "AUDUSD=X"}
         symbol = st.sidebar.selectbox("Select Forex Pair", list(forex_map.keys()))
         yf_symbol = forex_map[symbol]
     else:
-        comm_map = {
-            "Gold (XAU/USD)": "GC=F",
-            "Silver (XAG/USD)": "SI=F",
-            "Crude Oil": "CL=F"
-        }
+        comm_map = {"Gold (XAU/USD)": "GC=F", "Silver (XAG/USD)": "SI=F", "Crude Oil": "CL=F"}
         symbol = st.sidebar.selectbox("Select Commodity", list(comm_map.keys()))
         yf_symbol = comm_map[symbol]
     
     timeframe = st.sidebar.selectbox("Timeframe", ["5m", "15m", "30m", "1h", "4h", "1D", "15D", "1M"], index=3)
 
-# Calculations
+# Technical & SMC Calculations
 def calculate_indicators(df):
     delta = df['close'].diff()
     gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
@@ -103,16 +85,10 @@ def generate_nepse_data(sym, tf):
 def fetch_global_data(ticker, tf):
     try:
         tf_settings = {
-            "5m": ("5m", "5d"),
-            "15m": ("15m", "60d"),
-            "30m": ("30m", "60d"),
-            "1h": ("60m", "730d"),
-            "4h": ("60m", "730d"),
-            "1D": ("1d", "max"),
-            "15D": ("1d", "max"),
-            "1M": ("1mo", "max")
+            "5m": ("5m", "5d"), "15m": ("15m", "60d"), "30m": ("30m", "60d"),
+            "1h": ("60m", "730d"), "4h": ("60m", "730d"), "1D": ("1d", "max"),
+            "15D": ("1d", "max"), "1M": ("1mo", "max")
         }
-        
         interval, period = tf_settings.get(tf, ("1d", "1y"))
         data = yf.download(ticker, period=period, interval=interval, progress=False, auto_adjust=True)
         
@@ -136,15 +112,8 @@ def fetch_global_data(ticker, tf):
             data['volume'] = 0
             
         if tf == "4h" and interval == "60m":
-            data = data.resample('4h').agg({
-                'open': 'first', 'high': 'max', 'low': 'min', 'close': 'last', 'volume': 'sum'
-            }).dropna()
+            data = data.resample('4h').agg({'open': 'first', 'high': 'max', 'low': 'min', 'close': 'last', 'volume': 'sum'}).dropna()
             
-        if tf == "15D" and interval == "1d":
-            data = data.resample('15D').agg({
-                'open': 'first', 'high': 'max', 'low': 'min', 'close': 'last', 'volume': 'sum'
-            }).dropna()
-
         return calculate_indicators(data.dropna(subset=['close']))
     except Exception as e:
         return None
@@ -161,7 +130,7 @@ if df is not None and not df.empty:
     text_color = "#d1d4dc" if is_dark else "#191919"
     grid_color = "#2a2e39" if is_dark else "#e1e3e6"
 
-    # Plotly Subplots
+    # Plotly Subplots (Candlestick + Volume + RSI)
     fig = make_subplots(
         rows=3, cols=1, 
         shared_xaxes=True, 
@@ -169,7 +138,7 @@ if df is not None and not df.empty:
         row_heights=[0.65, 0.17, 0.18]
     )
 
-    # 1. Candlestick Chart (Strictly proper solid filled bodies like TradingView)
+    # 1. TradingView Style Solid Candlestick Chart
     fig.add_trace(go.Candlestick(
         x=df.index, open=df['open'], high=df['high'], low=df['low'], close=df['close'],
         name="Price", 
@@ -177,9 +146,28 @@ if df is not None and not df.empty:
         increasing_fillcolor='#26a69a', decreasing_fillcolor='#ef5350'
     ), row=1, col=1)
 
-    # EMAs
+    # Moving Averages (EMA 20 & 50)
     fig.add_trace(go.Scatter(x=df.index, y=df['ema20'], name="EMA 20", line=dict(color='#2962ff', width=1.2)), row=1, col=1)
     fig.add_trace(go.Scatter(x=df.index, y=df['ema50'], name="EMA 50", line=dict(color='#ff9800', width=1.2)), row=1, col=1)
+
+    # SMC Order Block (OB) Zones as clean rectangular shaded boxes
+    shapes = []
+    recent_df = df.tail(60)
+    for i in range(2, len(recent_df) - 1):
+        prev_idx = recent_df.index[i-1]
+        if recent_df['close'].iloc[i] > recent_df['open'].iloc[i] and recent_df['close'].iloc[i-1] < recent_df['open'].iloc[i-1]:
+            shapes.append(dict(
+                type="rect",
+                x0=prev_idx, y0=recent_df['low'].iloc[i-1],
+                x1=recent_df.index[-1], y1=recent_df['high'].iloc[i-1],
+                xref="x1", yref="y1",
+                fillcolor="rgba(38, 166, 154, 0.15)",
+                line=dict(color="#26a69a", width=1, dash="dot"),
+                layer="below"
+            ))
+            break # Show key active order block
+
+    fig.update_layout(shapes=shapes)
 
     # 2. Volume Bar Chart
     colors = ['#26a69a' if c >= o else '#ef5350' for c, o in zip(df['close'], df['open'])]
@@ -190,7 +178,7 @@ if df is not None and not df.empty:
     fig.add_hline(y=70, line_dash="dash", line_color="#ef5350", row=3, col=1)
     fig.add_hline(y=30, line_dash="dash", line_color="#26a69a", row=3, col=1)
 
-    # Layout styling (Price strictly on RIGHT side)
+    # Layout styling with Price scale strictly on the RIGHT side
     fig.update_layout(
         template="plotly_dark" if is_dark else "plotly_white",
         paper_bgcolor=bg_color,
@@ -203,6 +191,8 @@ if df is not None and not df.empty:
     )
 
     fig.update_xaxes(gridcolor=grid_color, showspikes=True, spikemode="across", spikesnap="cursor", spikecolor="gray")
+    
+    # Y-axis (Price Scale) strictly on the RIGHT side
     fig.update_yaxes(side="right", gridcolor=grid_color, showspikes=True, spikecolor="gray")
 
     st.plotly_chart(fig, use_container_width=True)
