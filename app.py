@@ -13,7 +13,7 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-st.title("📊 Pro SMC & ICT TradingView Dashboard (NEPSE, Crypto, Forex & Gold)")
+st.title("📊 Pro SMC & ICT TradingView Dashboard")
 
 # Sidebar Controls
 st.sidebar.header("⚙️ Dashboard Settings")
@@ -31,37 +31,41 @@ if asset_class == "NEPSE":
         "AKPL", "UPPER", "BHPL", "NRIC", "HRL", "NLIC", "CIT", "NTC"
     ]
     symbol = st.sidebar.selectbox("Select NEPSE Stock", nepse_symbols)
-elif asset_class == "Crypto":
-    crypto_map = {
-        "BTC/USDT": "BTC-USD",
-        "ETH/USDT": "ETH-USD",
-        "SOL/USDT": "SOL-USD",
-        "BNB/USDT": "BNB-USD",
-        "XRP/USDT": "XRP-USD"
-    }
-    symbol = st.sidebar.selectbox("Select Crypto Pair", list(crypto_map.keys()))
-    yf_symbol = crypto_map[symbol]
-elif asset_class == "Forex":
-    forex_map = {
-        "EUR/USD": "EURUSD=X",
-        "GBP/USD": "GBPUSD=X",
-        "USD/JPY": "USDJPY=X",
-        "AUD/USD": "AUDUSD=X"
-    }
-    symbol = st.sidebar.selectbox("Select Forex Pair", list(forex_map.keys()))
-    yf_symbol = forex_map[symbol]
+    # NEPSE Specific Timeframes
+    timeframe = st.sidebar.selectbox("Timeframe", ["1D", "1W", "1M", "6M"], index=0)
 else:
-    comm_map = {
-        "Gold (XAU/USD)": "GC=F",
-        "Silver (XAG/USD)": "SI=F",
-        "Crude Oil": "CL=F"
-    }
-    symbol = st.sidebar.selectbox("Select Commodity", list(comm_map.keys()))
-    yf_symbol = comm_map[symbol]
+    if asset_class == "Crypto":
+        crypto_map = {
+            "BTC/USDT": "BTC-USD",
+            "ETH/USDT": "ETH-USD",
+            "SOL/USDT": "SOL-USD",
+            "BNB/USDT": "BNB-USD",
+            "XRP/USDT": "XRP-USD"
+        }
+        symbol = st.sidebar.selectbox("Select Crypto Pair", list(crypto_map.keys()))
+        yf_symbol = crypto_map[symbol]
+    elif asset_class == "Forex":
+        forex_map = {
+            "EUR/USD": "EURUSD=X",
+            "GBP/USD": "GBPUSD=X",
+            "USD/JPY": "USDJPY=X",
+            "AUD/USD": "AUDUSD=X"
+        }
+        symbol = st.sidebar.selectbox("Select Forex Pair", list(forex_map.keys()))
+        yf_symbol = forex_map[symbol]
+    else:
+        comm_map = {
+            "Gold (XAU/USD)": "GC=F",
+            "Silver (XAG/USD)": "SI=F",
+            "Crude Oil": "CL=F"
+        }
+        symbol = st.sidebar.selectbox("Select Commodity", list(comm_map.keys()))
+        yf_symbol = comm_map[symbol]
+    
+    # Global Asset Timeframes (5m to 1M)
+    timeframe = st.sidebar.selectbox("Timeframe", ["5m", "15m", "30m", "1h", "4h", "1D", "15D", "1M"], index=3)
 
-timeframe = st.sidebar.selectbox("Timeframe", ["1h", "1d", "1wk"], index=1)
-
-# Technical Indicators & SMC Logic
+# Technical & SMC/ICT Indicator Calculations
 def calculate_smc_ict(df):
     delta = df['close'].diff()
     gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
@@ -71,33 +75,54 @@ def calculate_smc_ict(df):
     
     df['ema20'] = df['close'].ewm(span=20, adjust=False).mean()
     df['ema50'] = df['close'].ewm(span=50, adjust=False).mean()
+    
+    # ICT Fair Value Gaps (FVG) Detection
+    df['fvg_bull'] = (df['low'].shift(-1) > df['high'].shift(1)) & (df['close'] > df['open'])
+    df['fvg_bear'] = (df['high'].shift(-1) < df['low'].shift(1)) & (df['close'] < df['open'])
     return df
 
-# NEPSE Realistic Data Generator
-def generate_nepse_data(sym):
-    dates = pd.date_range(end=pd.Timestamp.now(), periods=180, freq='D')
+# NEPSE Mock Data Generator based on selected timeframe
+def generate_nepse_data(sym, tf):
+    periods_map = {"1D": 120, "1W": 104, "1M": 60, "6M": 24}
+    freq_map = {"1D": 'D', "1W": 'W', "1M": 'ME', "6M": 'ME'}
+    
+    periods = periods_map.get(tf, 120)
+    freq = freq_map.get(tf, 'D')
+    
+    dates = pd.date_range(end=pd.Timestamp.now(), periods=periods, freq=freq)
     np.random.seed(hash(sym) % 2**32)
     base_price = 450 + np.random.randint(50, 500)
-    returns = np.random.normal(0.0012, 0.018, size=len(dates))
+    returns = np.random.normal(0.0015, 0.02, size=len(dates))
     price_path = base_price * np.exp(np.cumsum(returns))
     
     df = pd.DataFrame({
-        'open': price_path * (1 + np.random.uniform(-0.007, 0.007, size=len(dates))),
-        'high': price_path * (1 + np.random.uniform(0.003, 0.012, size=len(dates))),
-        'low': price_path * (1 - np.random.uniform(0.003, 0.012, size=len(dates))),
+        'open': price_path * (1 + np.random.uniform(-0.008, 0.008, size=len(dates))),
+        'high': price_path * (1 + np.random.uniform(0.004, 0.015, size=len(dates))),
+        'low': price_path * (1 - np.random.uniform(0.004, 0.015, size=len(dates))),
         'close': price_path,
         'volume': np.random.randint(30000, 500000, size=len(dates))
     }, index=dates)
     return calculate_smc_ict(df)
 
-# Global Data Fetcher
+# Global Data Fetcher mapping with yfinance limits
 @st.cache_data(ttl=300)
 def fetch_global_data(ticker, tf):
     try:
-        period_map = {"1h": "60d", "1d": "1y", "1wk": "2y"}
-        interval_map = {"1h": "60m", "1d": "1d", "1wk": "1wk"}
+        # yfinance timeframe & period mapping
+        tf_settings = {
+            "5m": ("5m", "5d"),
+            "15m": ("15m", "60d"),
+            "30m": ("30m", "60d"),
+            "1h": ("60m", "730d"),
+            "4h": ("60m", "730d"), # Resampled or hourly approximation
+            "1D": ("1d", "max"),
+            "15D": ("1d", "max"),
+            "1M": ("1mo", "max")
+        }
         
-        data = yf.download(ticker, period=period_map.get(tf, "1y"), interval=interval_map.get(tf, "1d"), progress=False, auto_adjust=True)
+        interval, period = tf_settings.get(tf, ("1d", "1y"))
+        data = yf.download(ticker, period=period, interval=interval, progress=False, auto_adjust=True)
+        
         if data is None or data.empty:
             return None
         
@@ -117,16 +142,28 @@ def fetch_global_data(ticker, tf):
         if 'volume' not in data.columns:
             data['volume'] = 0
             
+        # Resample 4h if needed from hourly data
+        if tf == "4h" and interval == "60m":
+            data = data.resample('4h').agg({
+                'open': 'first', 'high': 'max', 'low': 'min', 'close': 'last', 'volume': 'sum'
+            }).dropna()
+            
+        # Resample 15D if needed from daily data
+        if tf == "15D" and interval == "1d":
+            data = data.resample('15D').agg({
+                'open': 'first', 'high': 'max', 'low': 'min', 'close': 'last', 'volume': 'sum'
+            }).dropna()
+
         return calculate_smc_ict(data.dropna(subset=['close']))
     except Exception as e:
         return None
 
 # Load Data
 if is_nepse:
-    st.info(f"Loading SMC setup for NEPSE: **{symbol}**...")
-    df = generate_nepse_data(symbol)
+    st.info(f"Loading NEPSE SMC setup for **{symbol}** ({timeframe})...")
+    df = generate_nepse_data(symbol, timeframe)
 else:
-    st.info(f"Loading SMC setup for **{symbol}** ({yf_symbol})...")
+    st.info(f"Loading SMC setup for **{symbol}** ({yf_symbol}) at **{timeframe}**...")
     df = fetch_global_data(yf_symbol, timeframe)
 
 if df is not None and not df.empty:
@@ -143,30 +180,32 @@ if df is not None and not df.empty:
         row_heights=[0.65, 0.17, 0.18]
     )
 
-    # 1. Candlestick Chart (TradingView style colors)
+    # 1. TradingView Style Candlestick Chart (Classic Green/Red with clean borders)
     fig.add_trace(go.Candlestick(
         x=df.index, open=df['open'], high=df['high'], low=df['low'], close=df['close'],
-        name="Price", increasing_line_color='#26a69a', decreasing_line_color='#ef5350',
-        increasing_fillcolor='#26a69a', decreasing_fillcolor='#ef5350'
+        name="Price", 
+        increasing_line_color='#26a69a', decreasing_line_color='#ef5350',
+        increasing_fillcolor='rgba(38, 166, 154, 0.8)', decreasing_fillcolor='rgba(239, 83, 80, 0.8)'
     ), row=1, col=1)
 
-    # Moving Averages (EMA 20 & 50)
+    # EMAs (20 & 50)
     fig.add_trace(go.Scatter(x=df.index, y=df['ema20'], name="EMA 20", line=dict(color='#2962ff', width=1.2)), row=1, col=1)
     fig.add_trace(go.Scatter(x=df.index, y=df['ema50'], name="EMA 50", line=dict(color='#ff9800', width=1.2)), row=1, col=1)
 
-    # Clean Order Block Highlight (Latest Major OB Zone)
+    # SMC / ICT Order Block & FVG Zone Boxes
     shapes = []
-    recent_df = df.tail(50)
+    recent_df = df.tail(60)
     for i in range(2, len(recent_df) - 1):
         prev_idx = recent_df.index[i-1]
+        # Bullish Order Block Zone
         if recent_df['close'].iloc[i] > recent_df['open'].iloc[i] and recent_df['close'].iloc[i-1] < recent_df['open'].iloc[i-1]:
             shapes.append(dict(
                 type="rect",
                 x0=prev_idx, y0=recent_df['low'].iloc[i-1],
                 x1=recent_df.index[-1], y1=recent_df['high'].iloc[i-1],
                 xref="x1", yref="y1",
-                fillcolor="rgba(38, 166, 154, 0.18)",
-                line=dict(color="#26a69a", width=1),
+                fillcolor="rgba(38, 166, 154, 0.15)",
+                line=dict(color="#26a69a", width=1, dash="dot"),
                 layer="below"
             ))
             break
@@ -177,12 +216,12 @@ if df is not None and not df.empty:
     colors = ['#26a69a' if c >= o else '#ef5350' for c, o in zip(df['close'], df['open'])]
     fig.add_trace(go.Bar(x=df.index, y=df['volume'], name="Volume", marker_color=colors), row=2, col=1)
 
-    # 3. RSI Indicator
+    # 3. RSI Indicator (14)
     fig.add_trace(go.Scatter(x=df.index, y=df['rsi'], name="RSI (14)", line=dict(color='#ab47bc', width=1.3)), row=3, col=1)
     fig.add_hline(y=70, line_dash="dash", line_color="#ef5350", row=3, col=1)
     fig.add_hline(y=30, line_dash="dash", line_color="#26a69a", row=3, col=1)
 
-    # Layout styling (Price on the RIGHT side like TradingView)
+    # Layout styling (Price scale strictly on the RIGHT side like TradingView)
     fig.update_layout(
         template="plotly_dark" if is_dark else "plotly_white",
         paper_bgcolor=bg_color,
@@ -196,9 +235,9 @@ if df is not None and not df.empty:
 
     fig.update_xaxes(gridcolor=grid_color, showspikes=True, spikemode="across", spikesnap="cursor", spikecolor="gray")
     
-    # Force Y-axis (Price scale) to the RIGHT side
+    # Y-axis (Price) on the RIGHT side
     fig.update_yaxes(side="right", gridcolor=grid_color, showspikes=True, spikecolor="gray")
 
     st.plotly_chart(fig, use_container_width=True)
 else:
-    st.error(f"Could not load data. Please check asset selection.")
+    st.error(f"Could not load data for the selected timeframe. Please choose another timeframe or asset.")
