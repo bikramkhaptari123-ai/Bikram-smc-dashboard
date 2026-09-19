@@ -13,20 +13,18 @@ st.markdown("""
 
 st.title("📊 Pro SMC & ICT Financial Dashboard")
 
-# Sidebar for Asset Selection & Timeframes
 st.sidebar.header("⚙️ Dashboard Settings")
 asset_type = st.sidebar.selectbox("Asset Class", ["Crypto", "Forex", "Commodity", "NEPSE"])
 
 if asset_type == "NEPSE":
     nepse_symbols = [
         "NABIL", "NMB", "NICA", "KBL", "GBIME", "EBL", "PCBL", 
-        "SBL", "CZBIL", "SANIMA", "PRVU", "ADBL", "HBL", "GBIME",
+        "SBL", "CZBIL", "SANIMA", "PRVU", "ADBL", "HBL", 
         "AKPL", "UPPER", "BHPL", "NRIC", "HRL", "CIT", "NTC", "NLIC"
     ]
     nepse_stock = st.sidebar.selectbox("Select NEPSE Stock", sorted(nepse_symbols))
     timeframe = st.sidebar.selectbox("Timeframe", ["1D", "1W", "1M", "6M"], index=0)
     
-    # NEPSE Advanced SMC Data Generator
     periods_map = {"1D": 150, "1W": 104, "1M": 60, "6M": 24}
     freq_map = {"1D": 'D', "1W": 'W', "1M": 'ME', "6M": 'ME'}
     periods = periods_map.get(timeframe, 150)
@@ -53,7 +51,6 @@ if asset_type == "NEPSE":
         name="Price"
     )])
     
-    # ICT / SMC Order Blocks & Fvg Shaded Zones for NEPSE
     shapes = []
     recent_df = df.tail(40)
     for i in range(2, len(recent_df) - 1):
@@ -83,7 +80,7 @@ if asset_type == "NEPSE":
     fig.update_yaxes(side="right", gridcolor="#2a2e39")
     fig.update_xaxes(gridcolor="#2a2e39")
     
-    st.subheader(f"📈 NEPSE SMC Setup: {nepse_stock} ({timeframe}) - Bullish Order Blocks Active")
+    st.subheader(f"📈 NEPSE SMC Setup: {nepse_stock} ({timeframe})")
     st.plotly_chart(fig, use_container_width=True)
 
 else:
@@ -94,21 +91,16 @@ else:
     else:
         symbol = st.sidebar.selectbox("Select Commodity", ["OANDA:XAUUSD", "TVC:GOLD", "COMEX:GC1!", "COMEX:SI1!"])
     
-    # Extended Timeframes for Global Assets
-    tv_timeframe = st.sidebar.selectbox("Timeframe", ["5", "15", "30", "60", "240", "D", "W", "M"], index=5, format_func=lambda x: {
-        "5": "5m", "15": "15m", "30": "30m", "60": "1h", "240": "4h", "D": "1 Day", "W": "1 Week", "M": "1 Month"
-    }[x])
+    tv_timeframe = st.sidebar.selectbox("Timeframe", ["5", "15", "30", "60", "240", "D", "W", "M"], index=5)
 
-    st.info(f"💡 **SMC & ICT Mode Active**: Use TradingView drawing tools on the right/left panel to mark Order Blocks, Fair Value Gaps (FVG), and Liquidity Sweeps.")
+    st.info("💡 **SMC & ICT Mode Active**: Use TradingView tools to mark Order Blocks and FVG.")
 
-    # Official TradingView Widget with Custom Interval & SMC/ICT Ready Layout
     tradingview_html = f"""
     <div class="tradingview-widget-container" style="height:730px;width:100%">
       <div id="tradingview_chart" style="height:100%;width:100%"></div>
       <script type="text/javascript" src="https://s3.tradingview.com/tv.js"></script>
       <script type="text/javascript">
-      new TradingView.widget(
-      {
+      new TradingView.widget({{
         "autosize": true,
         "symbol": "{symbol}",
         "interval": "{tv_timeframe}",
@@ -125,8 +117,7 @@ else:
           "RSI@tv-basicstudies"
         ],
         "container_id": "tradingview_chart"
-      }
-      );
+      }});
       </script>
     </div>
     """
