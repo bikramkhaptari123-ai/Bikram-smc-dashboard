@@ -3,7 +3,7 @@ import plotly.graph_objects as go
 import pandas as pd
 import numpy as np
 
-st.set_page_config(page_title="Pro Financial & TradingView Dashboard", layout="wide")
+st.set_page_config(page_title="Pro SMC & ICT Trading Dashboard", layout="wide")
 
 st.markdown("""
     <style>
@@ -11,43 +11,67 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-st.title("📊 Pro Financial & TradingView Dashboard")
+st.title("📊 Pro SMC & ICT Financial Dashboard")
 
-# Sidebar for Asset Selection
-st.sidebar.header("⚙️ Settings")
-asset_type = st.sidebar.selectbox("Asset Class", ["NEPSE", "Crypto", "Forex", "Commodity"])
+# Sidebar for Asset Selection & Timeframes
+st.sidebar.header("⚙️ Dashboard Settings")
+asset_type = st.sidebar.selectbox("Asset Class", ["Crypto", "Forex", "Commodity", "NEPSE"])
 
 if asset_type == "NEPSE":
-    nepse_stock = st.sidebar.selectbox("Select NEPSE Stock", ["NABIL", "NMB", "NICA", "KBL", "GBIME", "CIT", "NTC"])
+    nepse_symbols = [
+        "NABIL", "NMB", "NICA", "KBL", "GBIME", "EBL", "PCBL", 
+        "SBL", "CZBIL", "SANIMA", "PRVU", "ADBL", "HBL", "GBIME",
+        "AKPL", "UPPER", "BHPL", "NRIC", "HRL", "CIT", "NTC", "NLIC"
+    ]
+    nepse_stock = st.sidebar.selectbox("Select NEPSE Stock", sorted(nepse_symbols))
     timeframe = st.sidebar.selectbox("Timeframe", ["1D", "1W", "1M", "6M"], index=0)
     
-    # NEPSE Data Generation
-    periods_map = {"1D": 120, "1W": 104, "1M": 60, "6M": 24}
+    # NEPSE Advanced SMC Data Generator
+    periods_map = {"1D": 150, "1W": 104, "1M": 60, "6M": 24}
     freq_map = {"1D": 'D', "1W": 'W', "1M": 'ME', "6M": 'ME'}
-    periods = periods_map.get(timeframe, 120)
+    periods = periods_map.get(timeframe, 150)
     freq = freq_map.get(timeframe, 'D')
     
     dates = pd.date_range(end=pd.Timestamp.now(), periods=periods, freq=freq)
     np.random.seed(hash(nepse_stock) % 2**32)
-    base_price = 450 + np.random.randint(50, 500)
-    returns = np.random.normal(0.0015, 0.02, size=len(dates))
+    base_price = 450 + np.random.randint(50, 600)
+    returns = np.random.normal(0.0018, 0.022, size=len(dates))
     price_path = base_price * np.exp(np.cumsum(returns))
     
     df = pd.DataFrame({
-        'open': price_path * (1 + np.random.uniform(-0.008, 0.008, size=len(dates))),
-        'high': price_path * (1 + np.random.uniform(0.004, 0.015, size=len(dates))),
-        'low': price_path * (1 - np.random.uniform(0.004, 0.015, size=len(dates))),
+        'open': price_path * (1 + np.random.uniform(-0.009, 0.009, size=len(dates))),
+        'high': price_path * (1 + np.random.uniform(0.005, 0.018, size=len(dates))),
+        'low': price_path * (1 - np.random.uniform(0.005, 0.018, size=len(dates))),
         'close': price_path,
-        'volume': np.random.randint(30000, 500000, size=len(dates))
+        'volume': np.random.randint(40000, 700000, size=len(dates))
     }, index=dates)
 
     fig = go.Figure(data=[go.Candlestick(
         x=df.index, open=df['open'], high=df['high'], low=df['low'], close=df['close'],
         increasing_line_color='#26a69a', decreasing_line_color='#ef5350',
-        increasing_fillcolor='#26a69a', decreasing_fillcolor='#ef5350'
+        increasing_fillcolor='#26a69a', decreasing_fillcolor='#ef5350',
+        name="Price"
     )])
     
+    # ICT / SMC Order Blocks & Fvg Shaded Zones for NEPSE
+    shapes = []
+    recent_df = df.tail(40)
+    for i in range(2, len(recent_df) - 1):
+        prev_idx = recent_df.index[i-1]
+        if recent_df['close'].iloc[i] > recent_df['open'].iloc[i] and recent_df['close'].iloc[i-1] < recent_df['open'].iloc[i-1]:
+            shapes.append(dict(
+                type="rect",
+                x0=prev_idx, y0=recent_df['low'].iloc[i-1],
+                x1=recent_df.index[-1], y1=recent_df['high'].iloc[i-1],
+                xref="x", yref="y",
+                fillcolor="rgba(38, 166, 154, 0.2)",
+                line=dict(color="#26a69a", width=1, dash="dot"),
+                layer="below"
+            ))
+            break
+
     fig.update_layout(
+        shapes=shapes,
         template="plotly_dark",
         paper_bgcolor="#131722",
         plot_bgcolor="#131722",
@@ -59,39 +83,51 @@ if asset_type == "NEPSE":
     fig.update_yaxes(side="right", gridcolor="#2a2e39")
     fig.update_xaxes(gridcolor="#2a2e39")
     
-    st.subheader(f"📈 NEPSE: {nepse_stock} ({timeframe})")
+    st.subheader(f"📈 NEPSE SMC Setup: {nepse_stock} ({timeframe}) - Bullish Order Blocks Active")
     st.plotly_chart(fig, use_container_width=True)
 
 else:
     if asset_type == "Crypto":
-        symbol = st.sidebar.selectbox("Select Symbol", ["BINANCE:BTCUSDT", "BINANCE:ETHUSDT", "BINANCE:SOLUSDT"])
+        symbol = st.sidebar.selectbox("Select Crypto Symbol", ["BINANCE:BTCUSDT", "BINANCE:ETHUSDT", "BINANCE:SOLUSDT", "BINANCE:BNBUSDT", "BINANCE:XRPUSDT"])
     elif asset_type == "Forex":
-        symbol = st.sidebar.selectbox("Select Symbol", ["FX:EURUSD", "FX:GBPUSD", "FX:USDJPY"])
+        symbol = st.sidebar.selectbox("Select Forex Pair", ["FX:EURUSD", "FX:GBPUSD", "FX:USDJPY", "FX:AUDUSD"])
     else:
-        symbol = st.sidebar.selectbox("Select Symbol", ["OANDA:XAUUSD", "TVC:GOLD", "COMEX:GC1!"])
+        symbol = st.sidebar.selectbox("Select Commodity", ["OANDA:XAUUSD", "TVC:GOLD", "COMEX:GC1!", "COMEX:SI1!"])
+    
+    # Extended Timeframes for Global Assets
+    tv_timeframe = st.sidebar.selectbox("Timeframe", ["5", "15", "30", "60", "240", "D", "W", "M"], index=5, format_func=lambda x: {
+        "5": "5m", "15": "15m", "30": "30m", "60": "1h", "240": "4h", "D": "1 Day", "W": "1 Week", "M": "1 Month"
+    }[x])
 
-    # Official TradingView Widget for Global Assets
+    st.info(f"💡 **SMC & ICT Mode Active**: Use TradingView drawing tools on the right/left panel to mark Order Blocks, Fair Value Gaps (FVG), and Liquidity Sweeps.")
+
+    # Official TradingView Widget with Custom Interval & SMC/ICT Ready Layout
     tradingview_html = f"""
-    <div class="tradingview-widget-container" style="height:750px;width:100%">
+    <div class="tradingview-widget-container" style="height:730px;width:100%">
       <div id="tradingview_chart" style="height:100%;width:100%"></div>
       <script type="text/javascript" src="https://s3.tradingview.com/tv.js"></script>
       <script type="text/javascript">
       new TradingView.widget(
-      {{
+      {
         "autosize": true,
         "symbol": "{symbol}",
-        "interval": "D",
+        "interval": "{tv_timeframe}",
         "timezone": "Etc/UTC",
         "theme": "dark",
         "style": "1",
         "locale": "en",
+        "toolbar_bg": "#f1f3f6",
         "enable_publishing": false,
         "hide_top_toolbar": false,
         "save_image": false,
+        "studies": [
+          "MASimple@tv-basicstudies",
+          "RSI@tv-basicstudies"
+        ],
         "container_id": "tradingview_chart"
-      }}
+      }
       );
       </script>
     </div>
     """
-    st.components.v1.html(tradingview_html, height=760)
+    st.components.v1.html(tradingview_html, height=750)
