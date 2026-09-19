@@ -61,7 +61,7 @@ else:
 
 timeframe = st.sidebar.selectbox("Timeframe", ["1h", "1d", "1wk"], index=1)
 
-# SMC & ICT Calculations
+# Technical Indicators & SMC Logic
 def calculate_smc_ict(df):
     delta = df['close'].diff()
     gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
@@ -73,7 +73,7 @@ def calculate_smc_ict(df):
     df['ema50'] = df['close'].ewm(span=50, adjust=False).mean()
     return df
 
-# NEPSE Mock Data Generator
+# NEPSE Realistic Data Generator
 def generate_nepse_data(sym):
     dates = pd.date_range(end=pd.Timestamp.now(), periods=180, freq='D')
     np.random.seed(hash(sym) % 2**32)
@@ -123,10 +123,10 @@ def fetch_global_data(ticker, tf):
 
 # Load Data
 if is_nepse:
-    st.info(f"Loading clean SMC setup for NEPSE: **{symbol}**...")
+    st.info(f"Loading SMC setup for NEPSE: **{symbol}**...")
     df = generate_nepse_data(symbol)
 else:
-    st.info(f"Loading clean SMC setup for **{symbol}** ({yf_symbol})...")
+    st.info(f"Loading SMC setup for **{symbol}** ({yf_symbol})...")
     df = fetch_global_data(yf_symbol, timeframe)
 
 if df is not None and not df.empty:
@@ -135,7 +135,7 @@ if df is not None and not df.empty:
     text_color = "#d1d4dc" if is_dark else "#191919"
     grid_color = "#2a2e39" if is_dark else "#e1e3e6"
 
-    # Plotly Subplots
+    # Plotly Subplots (Price + Volume + RSI)
     fig = make_subplots(
         rows=3, cols=1, 
         shared_xaxes=True, 
@@ -143,37 +143,33 @@ if df is not None and not df.empty:
         row_heights=[0.65, 0.17, 0.18]
     )
 
-    # 1. Professional Candlestick Chart
+    # 1. Candlestick Chart (TradingView style colors)
     fig.add_trace(go.Candlestick(
         x=df.index, open=df['open'], high=df['high'], low=df['low'], close=df['close'],
         name="Price", increasing_line_color='#26a69a', decreasing_line_color='#ef5350',
         increasing_fillcolor='#26a69a', decreasing_fillcolor='#ef5350'
     ), row=1, col=1)
 
-    # EMAs
+    # Moving Averages (EMA 20 & 50)
     fig.add_trace(go.Scatter(x=df.index, y=df['ema20'], name="EMA 20", line=dict(color='#2962ff', width=1.2)), row=1, col=1)
     fig.add_trace(go.Scatter(x=df.index, y=df['ema50'], name="EMA 50", line=dict(color='#ff9800', width=1.2)), row=1, col=1)
 
-    # Clean Order Blocks: Only highlight the most recent significant OBs instead of every candle
+    # Clean Order Block Highlight (Latest Major OB Zone)
     shapes = []
-    recent_df = df.tail(40) # Look at recent candles to avoid clutter
-    
+    recent_df = df.tail(50)
     for i in range(2, len(recent_df) - 1):
-        idx = recent_df.index[i]
         prev_idx = recent_df.index[i-1]
-        
-        # Find strong Bullish OB
         if recent_df['close'].iloc[i] > recent_df['open'].iloc[i] and recent_df['close'].iloc[i-1] < recent_df['open'].iloc[i-1]:
             shapes.append(dict(
                 type="rect",
                 x0=prev_idx, y0=recent_df['low'].iloc[i-1],
                 x1=recent_df.index[-1], y1=recent_df['high'].iloc[i-1],
                 xref="x1", yref="y1",
-                fillcolor="rgba(38, 166, 154, 0.2)",
+                fillcolor="rgba(38, 166, 154, 0.18)",
                 line=dict(color="#26a69a", width=1),
                 layer="below"
             ))
-            break # Keep only the latest major valid one to keep chart clean
+            break
 
     fig.update_layout(shapes=shapes)
 
@@ -186,7 +182,7 @@ if df is not None and not df.empty:
     fig.add_hline(y=70, line_dash="dash", line_color="#ef5350", row=3, col=1)
     fig.add_hline(y=30, line_dash="dash", line_color="#26a69a", row=3, col=1)
 
-    # Layout styling
+    # Layout styling (Price on the RIGHT side like TradingView)
     fig.update_layout(
         template="plotly_dark" if is_dark else "plotly_white",
         paper_bgcolor=bg_color,
@@ -199,6 +195,8 @@ if df is not None and not df.empty:
     )
 
     fig.update_xaxes(gridcolor=grid_color, showspikes=True, spikemode="across", spikesnap="cursor", spikecolor="gray")
+    
+    # Force Y-axis (Price scale) to the RIGHT side
     fig.update_yaxes(side="right", gridcolor=grid_color, showspikes=True, spikecolor="gray")
 
     st.plotly_chart(fig, use_container_width=True)
