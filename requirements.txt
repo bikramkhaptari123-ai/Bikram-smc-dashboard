@@ -1,7 +1,6 @@
 streamlit
 plotly
+yfinance
 pandas
 numpy
-ccxt
-yfinance
-requests
+streamlit-lightweight-charts
