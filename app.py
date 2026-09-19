@@ -1,10 +1,11 @@
 import streamlit as st
-import yfinance as yf
+import plotly.graph_objects as go
+from plotly.subplots import make_subplots
 import pandas as pd
+import yfinance as yf
 import numpy as np
-from streamlit_lightweight_charts import renderLightweightCharts
 
-st.set_page_config(page_title="Pro TradingView SMC Dashboard", layout="wide")
+st.set_page_config(page_title="Pro TradingView & SMC Dashboard", layout="wide")
 
 st.markdown("""
     <style>
@@ -16,6 +17,7 @@ st.title("📊 Pro TradingView & SMC Financial Dashboard")
 
 # Sidebar Controls
 st.sidebar.header("⚙️ Settings")
+theme_choice = st.sidebar.selectbox("Theme Mode", ["TradingView Dark", "TradingView Light"], index=0)
 asset_class = st.sidebar.selectbox("Asset Class", ["Crypto", "Forex", "Commodities (Gold/Silver)", "NEPSE"])
 
 symbol = ""
@@ -43,141 +45,135 @@ else:
     
     timeframe = st.sidebar.selectbox("Timeframe", ["5m", "15m", "30m", "1h", "4h", "1D", "15D", "1M"], index=3)
 
-# Data Fetching Function
-@st.cache_data(ttl=300)
-def get_data(is_nepse_stock, ticker, tf):
-    if is_nepse_stock:
-        periods_map = {"1D": 120, "1W": 104, "1M": 60, "6M": 24}
-        freq_map = {"1D": 'D', "1W": 'W', "1M": 'ME', "6M": 'ME'}
-        periods = periods_map.get(tf, 120)
-        freq = freq_map.get(tf, 'D')
-        
-        dates = pd.date_range(end=pd.Timestamp.now(), periods=periods, freq=freq)
-        np.random.seed(hash(ticker) % 2**32)
-        base_price = 450 + np.random.randint(50, 500)
-        returns = np.random.normal(0.0015, 0.02, size=len(dates))
-        price_path = base_price * np.exp(np.cumsum(returns))
-        
-        df = pd.DataFrame({
-            'open': price_path * (1 + np.random.uniform(-0.008, 0.008, size=len(dates))),
-            'high': price_path * (1 + np.random.uniform(0.004, 0.015, size=len(dates))),
-            'low': price_path * (1 - np.random.uniform(0.004, 0.015, size=len(dates))),
-            'close': price_path,
-            'volume': np.random.randint(30000, 500000, size=len(dates))
-        }, index=dates)
-        return df
-    else:
-        try:
-            tf_settings = {
-                "5m": ("5m", "5d"), "15m": ("15m", "60d"), "30m": ("30m", "60d"),
-                "1h": ("60m", "730d"), "4h": ("60m", "730d"), "1D": ("1d", "max"),
-                "15D": ("1d", "max"), "1M": ("1mo", "max")
-            }
-            interval, period = tf_settings.get(tf, ("1d", "1y"))
-            data = yf.download(ticker, period=period, interval=interval, progress=False, auto_adjust=True)
-            if data is None or data.empty:
-                return None
-            if isinstance(data.columns, pd.MultiIndex):
-                data.columns = data.columns.get_level_values(0)
-            
-            rename_dict = {}
-            for col in data.columns:
-                cl = str(col).lower()
-                if 'open' in cl: rename_dict[col] = 'open'
-                elif 'high' in cl: rename_dict[col] = 'high'
-                elif 'low' in cl: rename_dict[col] = 'low'
-                elif 'close' in cl: rename_dict[col] = 'close'
-                elif 'volume' in cl: rename_dict[col] = 'volume'
-            
-            data = data.rename(columns=rename_dict)
-            if 'volume' not in data.columns:
-                data['volume'] = 0
-            return data.dropna(subset=['close'])
-        except Exception:
-            return None
+# Calculations
+def calculate_indicators(df):
+    delta = df['close'].diff()
+    gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
+    loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
+    rs = gain / loss
+    df['rsi'] = 100 - (100 / (1 + rs))
+    
+    df['ema20'] = df['close'].ewm(span=20, adjust=False).mean()
+    df['ema50'] = df['close'].ewm(span=50, adjust=False).mean()
+    return df
 
-df = get_data(is_nepse, yf_symbol if not is_nepse else symbol, timeframe)
+# NEPSE Mock Data Generator
+def generate_nepse_data(sym, tf):
+    periods_map = {"1D": 120, "1W": 104, "1M": 60, "6M": 24}
+    freq_map = {"1D": 'D', "1W": 'W', "1M": 'ME', "6M": 'ME'}
+    
+    periods = periods_map.get(tf, 120)
+    freq = freq_map.get(tf, 'D')
+    
+    dates = pd.date_range(end=pd.Timestamp.now(), periods=periods, freq=freq)
+    np.random.seed(hash(sym) % 2**32)
+    base_price = 450 + np.random.randint(50, 500)
+    returns = np.random.normal(0.0015, 0.02, size=len(dates))
+    price_path = base_price * np.exp(np.cumsum(returns))
+    
+    df = pd.DataFrame({
+        'open': price_path * (1 + np.random.uniform(-0.008, 0.008, size=len(dates))),
+        'high': price_path * (1 + np.random.uniform(0.004, 0.015, size=len(dates))),
+        'low': price_path * (1 - np.random.uniform(0.004, 0.015, size=len(dates))),
+        'close': price_path,
+        'volume': np.random.randint(30000, 500000, size=len(dates))
+    }, index=dates)
+    return calculate_indicators(df)
+
+# Global Data Fetcher
+@st.cache_data(ttl=300)
+def fetch_global_data(ticker, tf):
+    try:
+        tf_settings = {
+            "5m": ("5m", "5d"), "15m": ("15m", "60d"), "30m": ("30m", "60d"),
+            "1h": ("60m", "730d"), "4h": ("60m", "730d"), "1D": ("1d", "max"),
+            "15D": ("1d", "max"), "1M": ("1mo", "max")
+        }
+        interval, period = tf_settings.get(tf, ("1d", "1y"))
+        data = yf.download(ticker, period=period, interval=interval, progress=False, auto_adjust=True)
+        
+        if data is None or data.empty:
+            return None
+        
+        if isinstance(data.columns, pd.MultiIndex):
+            data.columns = data.columns.get_level_values(0)
+            
+        rename_dict = {}
+        for col in data.columns:
+            cl = str(col).lower()
+            if 'open' in cl: rename_dict[col] = 'open'
+            elif 'high' in cl: rename_dict[col] = 'high'
+            elif 'low' in cl: rename_dict[col] = 'low'
+            elif 'close' in cl: rename_dict[col] = 'close'
+            elif 'volume' in cl: rename_dict[col] = 'volume'
+            
+        data = data.rename(columns=rename_dict)
+        if 'volume' not in data.columns:
+            data['volume'] = 0
+            
+        if tf == "4h" and interval == "60m":
+            data = data.resample('4h').agg({'open': 'first', 'high': 'max', 'low': 'min', 'close': 'last', 'volume': 'sum'}).dropna()
+            
+        return calculate_indicators(data.dropna(subset=['close']))
+    except Exception as e:
+        return None
+
+# Load Data
+if is_nepse:
+    df = generate_nepse_data(symbol, timeframe)
+else:
+    df = fetch_global_data(yf_symbol, timeframe)
 
 if df is not None and not df.empty:
-    # Format data for TradingView Lightweight Charts
-    df['time'] = df.index.strftime('%Y-%m-%d')
-    
-    candlestick_data = []
-    volume_data = []
-    
-    for i, row in df.iterrows():
-        time_str = row['time']
-        candlestick_data.append({
-            "time": time_str,
-            "open": float(row['open']),
-            "high": float(row['high']),
-            "low": float(row['low']),
-            "close": float(row['close'])
-        })
-        
-        # Color volume bars based on price action
-        color = "#26a69a" if row['close'] >= row['open'] else "#ef5350"
-        volume_data.append({
-            "time": time_str,
-            "value": float(row['volume']),
-            "color": color
-        })
+    is_dark = (theme_choice == "TradingView Dark")
+    bg_color = "#131722" if is_dark else "#ffffff"
+    text_color = "#d1d4dc" if is_dark else "#191919"
+    grid_color = "#2a2e39" if is_dark else "#e1e3e6"
 
-    # TradingView Lightweight Charts configuration
-    chart_options = {
-        "layout": {
-            "background": {"type": "solid", "color": "#131722"},
-            "textColor": "#d1d4dc"
-        },
-        "grid": {
-            "vertLines": {"color": "#2a2e39"},
-            "horzLines": {"color": "#2a2e39"}
-        },
-        "timeScale": {
-            "timeVisible": True,
-            "borderColor": "#2a2e39"
-        },
-        "rightPriceScale": {
-            "borderColor": "#2a2e39"
-        }
-    }
+    # Plotly Subplots
+    fig = make_subplots(
+        rows=3, cols=1, 
+        shared_xaxes=True, 
+        vertical_spacing=0.03, 
+        row_heights=[0.65, 0.17, 0.18]
+    )
 
-    # Candlestick Series
-    series_candlestick = [{
-        "type": "Candlestick",
-        "data": candlestick_data,
-        "options": {
-            "upColor": "#26a69a",
-            "downColor": "#ef5350",
-            "borderVisible": False,
-            "wickUpColor": "#26a69a",
-            "wickDownColor": "#ef5350"
-        }
-    }]
+    # Candlestick chart with solid filled bodies (TradingView style colors)
+    fig.add_trace(go.Candlestick(
+        x=df.index, open=df['open'], high=df['high'], low=df['low'], close=df['close'],
+        name="Price",
+        increasing_line_color='#26a69a', decreasing_line_color='#ef5350',
+        increasing_fillcolor='#26a69a', decreasing_fillcolor='#ef5350'
+    ), row=1, col=1)
 
-    # Volume Series (Histogram)
-    series_volume = [{
-        "type": "Histogram",
-        "data": volume_data,
-        "options": {
-            "priceFormat": {"type": "volume"},
-            "priceScaleId": "volume"
-        }
-    }]
+    # EMAs
+    fig.add_trace(go.Scatter(x=df.index, y=df['ema20'], name="EMA 20", line=dict(color='#2962ff', width=1.2)), row=1, col=1)
+    fig.add_trace(go.Scatter(x=df.index, y=df['ema50'], name="EMA 50", line=dict(color='#ff9800', width=1.2)), row=1, col=1)
 
-    st.subheader(f"📈 {symbol} Chart ({timeframe})")
-    
-    # Render TradingView Price Chart
-    renderLightweightCharts([
-        {
-            "chart": chart_options,
-            "series": series_candlestick
-        },
-        {
-            "chart": {"height": 150, **chart_options},
-            "series": series_volume
-        }
-    ], key='financial_chart')
+    # Volume Bar Chart
+    colors = ['#26a69a' if c >= o else '#ef5350' for c, o in zip(df['close'], df['open'])]
+    fig.add_trace(go.Bar(x=df.index, y=df['volume'], name="Volume", marker_color=colors), row=2, col=1)
 
+    # RSI Indicator
+    fig.add_trace(go.Scatter(x=df.index, y=df['rsi'], name="RSI (14)", line=dict(color='#ab47bc', width=1.3)), row=3, col=1)
+    fig.add_hline(y=70, line_dash="dash", line_color="#ef5350", row=3, col=1)
+    fig.add_hline(y=30, line_dash="dash", line_color="#26a69a", row=3, col=1)
+
+    # Layout styling with Price strictly on the RIGHT side
+    fig.update_layout(
+        template="plotly_dark" if is_dark else "plotly_white",
+        paper_bgcolor=bg_color,
+        plot_bgcolor=bg_color,
+        font=dict(color=text_color, size=11),
+        xaxis_rangeslider_visible=False,
+        height=800,
+        margin=dict(l=10, r=50, t=30, b=10),
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0)
+    )
+
+    fig.update_xaxes(gridcolor=grid_color, showspikes=True, spikemode="across", spikesnap="cursor", spikecolor="gray")
+    fig.update_yaxes(side="right", gridcolor=grid_color, showspikes=True, spikecolor="gray")
+
+    st.plotly_chart(fig, use_container_width=True)
 else:
-    st.error("Could not load chart data. Please check selection.")
+    st.error(f"Could not load data for the selected timeframe. Please check selection.")
